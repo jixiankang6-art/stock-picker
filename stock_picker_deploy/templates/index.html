@@ -201,7 +201,7 @@ async function scoreAndRefresh(name,stocks){
   var top=stocks.slice(0,20),codes=top.map(function(s){return s['代码']});
   var scored={},done=0;
   for(var i=0;i<codes.length;i++){
-    try{var r=await fetch('/api/kline/'+codes[i]+'?days=120');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_120d||kd.klines_60d||kd.klines_20d||[];
+    try{var r=await fetch('/api/kline/'+codes[i]+'?days=60');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_120d||kd.klines_60d||kd.klines_20d||[];
     var closes=kl.map(function(k){return k.close}),volumes=kl.map(function(k){return k.volume});
     var cur=top[i]['最新价']||closes[closes.length-1]||0,c20=closes.slice(-20),c60=closes.slice(-60),c120=closes.slice(-120);
     var s=0,cons=0;for(var j=c20.length-1;j>0;j--){if(c20[j]>c20[j-1])cons++;else break;}if(cur>c20[c20.length-1])cons++;
