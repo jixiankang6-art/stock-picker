@@ -179,14 +179,10 @@ async function pickSector(name){
   try{
     var d=await api('/api/sector/'+encodeURIComponent(name)+'/stocks');
     if(d.code!==0||!d.data.length){document.getElementById('stock-content').innerHTML='<div class="card"><p style="color:var(--hint)">暂无成分股数据</p></div>';return;}
-    var all=d.data,rec=[],nrec=[];
-    all.forEach(function(s){if(s['评分']>=60&&s['名称'].indexOf('ST')<0)rec.push(s);else nrec.push(s);});
+    var all=d.data;
     var html='';
-    if(rec.length){
-      html+='<div class="card" style="border:2px solid #FFD700;position:relative"><div style="position:absolute;top:-11px;left:16px;background:linear-gradient(135deg,#FFD700,#FFA500);color:#fff;padding:2px 12px;border-radius:8px;font-size:12px;font-weight:700">⭐ 精选推荐 · '+rec.length+' 只</div><div style="margin-top:10px">';
-      rec.forEach(function(s){html+=stockRow(s);});
-      html+='</div></div>';
-    }
+    // 评分加载placeholder
+    html+='<div class="card" id="recommend-card" style="border:2px solid #FFD700;position:relative"><div style="position:absolute;top:-11px;left:16px;background:linear-gradient(135deg,#FFD700,#FFA500);color:#fff;padding:2px 12px;border-radius:8px;font-size:12px;font-weight:700">⭐ 精选推荐</div><div style="margin-top:10px;text-align:center;padding:20px"><div class="spinner" style="display:inline-block;border-color:#FFD700;border-top-color:#FFA500"></div><p style="color:var(--hint);font-size:13px;margin-top:8px">正在计算评分...</p></div></div>';
     html+='<div class="card" style="margin-top:8px"><h3>📋 全部成分股 · '+all.length+' 只</h3>';
     all.forEach(function(s){html+=stockRow(s);});
     html+='</div>';
@@ -236,17 +232,24 @@ async function scoreAndRefresh(name,stocks){
 
 function refreshRecommend(stocks,scored){
   var rec=[],nrec=[];stocks.forEach(function(s){var sc=scored[s['代码']]||0;s['评分']=sc;if(sc>=60&&s['名称'].indexOf('ST')<0)rec.push(s);else nrec.push(s);});
+  var rc=document.getElementById('recommend-card');if(!rc)return;
   var html='';
   if(rec.length){
-    html+='<div class="card" style="border:2px solid #FFD700;position:relative"><div style="position:absolute;top:-11px;left:16px;background:linear-gradient(135deg,#FFD700,#FFA500);color:#fff;padding:2px 12px;border-radius:8px;font-size:12px;font-weight:700">⭐ 精选推荐 · '+rec.length+' 只</div><div style="margin-top:10px">';
-    rec.forEach(function(s){html+=stockRow(s);});html+='</div></div>';
+    rc.style.border='2px solid #FFD700';
+    rc.querySelector('div:first-child').textContent='⭐ 精选推荐 · '+rec.length+' 只';
+    html='<div style="margin-top:10px">';
+    rec.forEach(function(s){html+=stockRow(s);});html+='</div>';
+    rc.innerHTML=html;
+    // re-add the banner
+    rc.insertAdjacentHTML('afterbegin','<div style="position:absolute;top:-11px;left:16px;background:linear-gradient(135deg,#FFD700,#FFA500);color:#fff;padding:2px 12px;border-radius:8px;font-size:12px;font-weight:700">⭐ 精选推荐 · '+rec.length+' 只</div>');
+  }else{
+    rc.style.border='1px solid var(--gray-2)';
+    rc.innerHTML='<div style="text-align:center;padding:16px;color:var(--hint);font-size:13px">该板块暂无评分≥60的精选标的</div>';
   }
-  html+='<div class="card" style="margin-top:8px"><h3>📋 全部成分股 · '+stocks.length+' 只</h3>';
   stocks.sort(function(a,b){return b['评分']-a['评分']});
-  stocks.forEach(function(s){html+=stockRow(s);});
-  html+='</div>';
-  document.getElementById('stock-content').innerHTML=html;
-  stockCacheHTML=html;
+  var allHtml='';stocks.forEach(function(s){allHtml+=stockRow(s);});
+  var allCard=rc.nextElementSibling;if(allCard)allCard.innerHTML='<h3>📋 全部成分股 · '+stocks.length+' 只</h3>'+allHtml;
+  stockCacheHTML=document.getElementById('stock-content').innerHTML;
   document.getElementById('stock-title').textContent=curSector+' · '+(rec.length?'精选 '+rec.length+' 只':'成分股');
 }
 
