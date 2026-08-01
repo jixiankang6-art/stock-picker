@@ -198,7 +198,7 @@ var scoreTimer=0;
 async function scoreAndRefresh(name,stocks){
   clearTimeout(scoreTimer);
   var statusEl=document.getElementById('score-status');if(statusEl)statusEl.textContent='评分计算中...';
-  var top=stocks.slice(0,20),codes=top.map(function(s){return s['代码']});
+  var top=stocks,codes=top.map(function(s){return s['代码']});
   var scored={},done=0;
   for(var i=0;i<codes.length;i++){
     try{var r=await fetch('/api/kline/'+codes[i]+'?days=60');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_120d||kd.klines_60d||kd.klines_20d||[];
