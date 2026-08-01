@@ -137,11 +137,7 @@ function api(p){return fetch(p).then(function(r){return r.json()});}
 async function loadMarket(){
   var ld=document.getElementById('market-loading');
   try{
-    var controller=new AbortController();
-    var timeout=setTimeout(function(){controller.abort();},25000);
-    var r=await fetch('/api/market',{signal:controller.signal});
-    clearTimeout(timeout);
-    var d=await r.json();
+    var r=await fetch('/api/market');var d=await r.json();
     if(d.code!==0)return;
     var cn=[],gl=[];
     d.data.forEach(function(i){
@@ -152,8 +148,8 @@ async function loadMarket(){
     });
     ld.style.display='none';
     document.getElementById('market-cn').innerHTML=cn.join('');
-    document.getElementById('market-global').innerHTML=gl.join('')+'<div class="market-tile" style="opacity:.5"><div class="name">日经/韩国综指</div><div class="val flat">--</div><div class="chg flat">暂不支持</div></div>';
-  }catch(e){ld.innerHTML='<div style="text-align:center;padding:20px;color:var(--hint)"><p>服务器休眠中，请稍后重试</p><button class="btn-secondary" style="margin-top:8px" onclick="loadMarket()">刷新</button></div>'}
+    document.getElementById('market-global').innerHTML=gl.join('');
+  }catch(e){ld.innerHTML='<div style="text-align:center;padding:20px;color:var(--hint)"><p>服务器响应超时</p><button class="btn-secondary" style="margin-top:8px" onclick="loadMarket()">重试</button></div>'}
 }
 
 // ===== 板块扫描 =====
@@ -217,7 +213,7 @@ async function scoreAndRefresh(name,stocks){
       if(c60.length){var ma60=c60.reduce(function(a,b){return a+b},0)/c60.length;var dev=(cur-ma60)/ma60*100;s+=(dev>=-5&&dev<=5)?15:(dev>=-15&&dev<=15)?10:5}
       if(volumes.length>=5){var avgV=volumes.slice(-5).reduce(function(a,b){return a+b},0)/5;var vr=volumes[volumes.length-1]/avgV;s+=vr>1.5?12:vr>1.2?8:vr>0.8?4:0}
       if(top[i]['名称'].indexOf('ST')<0)s+=5;if(c20.length>=20&&c60.length){if(c20.reduce(function(a,b){return a+b},0)/c20.length>ma60)s+=5}
-      s+=5;scored[codes[i]]=s;}catch(e){}
+      s+=5;scored[codes[i]]=s;}}catch(e){}
       done++;if(done%10===0||done===codes.length){if(statusEl)statusEl.textContent='评分中 '+done+'/'+codes.length;}
     }
     // 每批刷新DOM
