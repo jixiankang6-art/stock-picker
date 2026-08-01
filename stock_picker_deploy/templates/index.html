@@ -308,23 +308,26 @@ async function scoreStocksInBrowser(name, stocks) {
   window._scores = scored;
   
   // 更新DOM
-  applyScores(scored, top);
+  applyScores(scored);
 }
 
 function applyScores(scored, stocks) {
-  if (!stocks) return;
+  if (!scored) return;
   var rows = document.querySelectorAll('#stock-report table tbody tr');
-  for (var i = 0; i < Math.min(rows.length, stocks.length); i++) {
-    var s = stocks[i], code = s['代码'];
-    var score = scored[code] || 0;
+  var list = stocks || [];
+  for (var i = 0; i < rows.length; i++) {
     var cells = rows[i].cells;
-    if (cells.length >= 2) {
-      var isRec = score >= 60 && s['名称'].indexOf('ST') < 0;
-      cells[0].innerHTML = '<b style="font-size:16px">' + (isRec ? '⭐' : '') + '</b>';
-      cells[1].textContent = score;
-      cells[1].style.color = score >= 60 ? 'var(--red)' : 'var(--text2)';
-      if (isRec) rows[i].style.background = '#fffde7';
-    }
+    if (cells.length < 2) continue;
+    // 从表格第3列取代码
+    var code = cells[2] ? cells[2].textContent.trim() : '';
+    // 或者从传入的列表按索引取
+    if (!code && list.length > i) code = list[i]['代码'];
+    var score = code ? (scored[code] || 0) : 0;
+    cells[0].innerHTML = '<b style="font-size:16px">' + (score >= 60 && cells[3] && cells[3].textContent.indexOf('ST') < 0 ? '⭐' : '') + '</b>';
+    cells[1].textContent = score;
+    cells[1].style.color = score >= 60 ? 'var(--red)' : 'var(--text2)';
+    if (score >= 60) rows[i].style.background = '#fffde7';
+    else rows[i].style.background = '';
   }
 }
 
