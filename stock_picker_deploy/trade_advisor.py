@@ -43,11 +43,21 @@ def advise(stock_analysis: dict, klines: list[dict] = None) -> dict:
         tr_list.append(max(hl, hc, lc))
     atr = sum(tr_list[-14:]) / 14
 
-    # 支撑位：MA20 或 20日最低点取高值
+    # 支撑位：MA20 或 20日最低点
     c20 = closes[-20:]
     ma20 = sum(c20) / len(c20)
     low20 = min(lows[-20:])
-    buy = max(ma20, low20)
+
+    # 买点：当前位置决定
+    if cur <= ma20:
+        # 当前价低于均线 → 逢低买入，取当前价附近但不低于20日低点
+        buy = max(cur, low20)
+    elif cur <= ma20 * 1.05:
+        # 均线附近 → 以均线为买点
+        buy = ma20
+    else:
+        # 远高于均线 → 等回调买均线
+        buy = ma20
     buy = round(buy, 2)
 
     # 止损：买点 − 1.5×ATR，不低于 20 日最低点

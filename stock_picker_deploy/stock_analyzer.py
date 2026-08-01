@@ -120,7 +120,7 @@ def _get_sina_klines_raw(code: str, count: int) -> list[dict]:
     try:
         data = json.loads(text)
         return [
-            {"日期": k["day"], "open": float(k["open"]), "high": float(k["high"]),
+            {"date": k["day"], "open": float(k["open"]), "high": float(k["high"]),
              "low": float(k["low"]), "close": float(k["close"]), "volume": int(k["volume"])}
             for k in data if k.get("close")
         ]
