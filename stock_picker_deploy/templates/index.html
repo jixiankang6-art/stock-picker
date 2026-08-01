@@ -251,10 +251,117 @@ async function loadSectorStocks(name) {
     html += '<div style="margin-top:10px"><input id="stock-code-input" type="text" placeholder="或输入其他代码" maxlength="6" style="padding:8px;border:1px solid var(--border);border-radius:6px;width:160px;font-size:14px"> ' +
       '<button class="btn btn-primary btn-sm" onclick="analyzeStock()">分析</button></div>';
     report.innerHTML = html;
-    window._sectorHTML = html;  // 保存用于返回
+    window._sectorHTML = html;
     window._currentSector = name;
+
+    // 前端异步评分（不阻塞显示）
+    scoreStocksInBrowser(name, r.data);
   } catch(e) {
     report.innerHTML = '<p style="color:#999">加载失败</p>';
+  }
+}
+
+async function scoreStocksInBrowser(name, stocks) {
+  if (!stocks || !stocks.length) return;
+  var top = stocks.slice(0, 80);
+  var codes = top.map(function(s){return s['代码']});
+  
+  // 并行拉K线，每批10只
+  var klineMap = {};
+  for (var i = 0; i < codes.length; i += 10) {
+    var batch = codes.slice(i, i + 10);
+    var promises = batch.map(function(c) {
+      return fetch('/api/kline/' + c + '?days=120')
+        .then(function(r){return r.json()})
+        .then(function(d){if(d.code===0){klineMap[c]=d.data;}})
+        .catch(function(){});
+    });
+    await Promise.all(promises);
+  }
+
+  // 评分
+  var scored = [];
+  for (var j = 0; j < top.length; j++) {
+    var s = top[j], code = s['代码'];
+    var kd = klineMap[code];
+    var score = 0;
+    if (kd) {
+      var kl = kd.klines_120d || kd.klines_60d || kd.klines_20d || [];
+      var closes = kl.map(function(k){return k.close});
+      var volumes = kl.map(function(k){return k.volume});
+      var cur = s['最新价'] || (closes.length ? closes[closes.length-1] : 0);
+      var c20 = closes.slice(-20), c60 = closes.slice(-60), c120 = closes.slice(-120);
+      
+      // 趋势 (0-25)
+      var cons = 0;
+      for (var d = c20.length-1; d > 0; d--) { if (c20[d] > c20[d-1]) cons++; else break; }
+      if (cur > c20[c20.length-1]) cons++;
+      score += Math.min(cons * 6, 25);
+      
+      // 动量 (0-15)
+      if (c20.length >= 6) {
+        var chg5 = (c20[c20.length-1] - c20[c20.length-6]) / c20[c20.length-6] * 100;
+        score += Math.min(Math.max(Math.floor(chg5 * 3 + 5), 0), 15);
+      }
+      
+      // 均线 (0-15)
+      if (c60.length) {
+        var ma60 = c60.reduce(function(a,b){return a+b},0) / c60.length;
+        var dev = (cur - ma60) / ma60 * 100;
+        score += (dev >= -5 && dev <= 5) ? 15 : (dev >= -15 && dev <= 15) ? 10 : 5;
+      }
+      
+      // 放量 (0-20)
+      if (volumes.length >= 5) {
+        var avgV = volumes.slice(-5).reduce(function(a,b){return a+b},0) / 5;
+        var vr = volumes[volumes.length-1] / avgV;
+        score += vr > 1.5 ? 12 : vr > 1.2 ? 8 : vr > 0.8 ? 4 : 0;
+      }
+      
+      // 业绩代理 (0-15)
+      if (s['名称'].indexOf('ST') < 0 && s['名称'].indexOf('*ST') < 0) score += 5;
+      if (c20.length >= 20 && c60.length) {
+        var ma20v = c20.reduce(function(a,b){return a+b},0) / c20.length;
+        if (ma20v > ma60) score += 5;
+      }
+      if (c120.length >= 2 && c120[c120.length-1] > c120[0]) score += 5;
+      
+      // 换手 (0-10)
+      score += 5; // default since we don't have turnover in basic quote
+    }
+    scored.push({idx: j, score: score});
+  }
+  
+  // 排序重渲染
+  scored.sort(function(a,b){return b.score - a.score});
+  var tableRows = document.querySelectorAll('#stock-report table tbody tr');
+  if (!tableRows.length) return;
+  
+  var tbody = tableRows[0].parentNode;
+  var rows = [];
+  for (var k = 0; k < tableRows.length; k++) rows.push(tableRows[k]);
+  
+  // 重新排序并更新评分列
+  rows.sort(function(a,b){
+    var ia = scored.findIndex(function(x){return x.idx === rows.indexOf(a)});
+    var ib = scored.findIndex(function(x){return x.idx === rows.indexOf(b)});
+    return (scored[ia]||{}).score - (scored[ib]||{}).score;
+  }).reverse();
+  
+  // 简化：直接更新评分数字就行，不用重排DOM
+  for (var m = 0; m < Math.min(tableRows.length, scored.length); m++) {
+    var sc = scored[m];
+    var row = rows[sc.idx];
+    if (row) {
+      var cells = row.cells;
+      if (cells.length >= 2) {
+        var isRec = sc.score >= 60 && top[sc.idx]['名称'].indexOf('ST') < 0;
+        cells[0].innerHTML = '<b style="font-size:16px">' + (isRec ? '⭐' : '') + '</b>';
+        cells[1].innerHTML = sc.score;
+        cells[1].style.color = sc.score >= 60 ? 'var(--red)' : 'var(--text2)';
+        if (isRec) row.style.background = '#fffde7';
+      }
+    }
   }
 }
 
