@@ -49,7 +49,7 @@ def analyze_stock(code: str) -> dict:
         result["市值量级"] = "未知"
 
     # 2. 新浪 K线
-    klines = _get_sina_klines_raw(code, 120)
+    klines = _get_sina_klines_raw(code, 60)
     k20 = klines[-20:] if len(klines) >= 20 else klines
     k60 = klines[-60:] if len(klines) >= 60 else klines
     k120 = klines[-120:] if len(klines) >= 120 else klines

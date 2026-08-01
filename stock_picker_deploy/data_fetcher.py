@@ -99,17 +99,16 @@ _SECTOR_BK = [
 ]
 
 
-def get_sector_fund_flow():
+def get_sector_fund_flow() -> list[dict]:
     """
     获取行业板块行情 + 代表股 K 线连续上涨天数。
     腾讯实时行情 + 新浪日K线历史。
     """
-    import pandas as pd
 
     # 1. 腾讯行情 — 所有板块今日数据
     text = _curl_text(f"https://qt.gtimg.cn/q={','.join(c for _,c in _PT_SECTOR_MAP)}")
     if not text:
-        return pd.DataFrame()
+        return []
 
     # 2. 新浪 K 线 — 代表股历史数据（批量）
     stock_closes = _fetch_sina_klines_batch()
@@ -129,7 +128,6 @@ def get_sector_fund_flow():
         prev = float(parts[4]) if parts[4] else cur
         chg = round((cur - prev) / prev * 100, 2) if prev else 0
 
-        # 从代表股K线计算连续上涨天数
         closes = stock_closes.get("pt" + pt_code, [])
         consecutive = 0
         for i in range(len(closes) - 1, 0, -1):
@@ -137,7 +135,6 @@ def get_sector_fund_flow():
                 consecutive += 1
             else:
                 break
-        # K线最后一天是最近交易日，如果今日板块涨则+1
         if chg > 0 and closes and len(closes) >= 1:
             consecutive += 1
 
@@ -150,7 +147,7 @@ def get_sector_fund_flow():
             "主力净流入": chg * 1e8,
             "散户净流入": -chg * 0.5e8,
         })
-    return pd.DataFrame(rows)
+    return rows
 
 
 def _fetch_sina_klines_batch() -> dict:
@@ -614,13 +611,13 @@ def get_stocks_quote_extra(codes: list[str]) -> dict:
 # ===================== 新浪 K 线批量 =====================
 
 def get_sina_klines_batch(codes: list[str]) -> dict:
-    """批量获取新浪日K线 {code: {klines_20d, klines_60d, klines_120d}}"""
+    """批量获取新浪日K线 {code: {klines_20d, klines_60d}}"""
     result = {}
     for code in codes:
         symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
         url = (
             f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-            f"CN_MarketData.getKLineData?symbol={symbol}&scale=240&ma=no&datalen=120"
+            f"CN_MarketData.getKLineData?symbol={symbol}&scale=240&ma=no&datalen=60"
         )
         text = _curl_text(url, timeout=10)
         if not text:
@@ -636,7 +633,6 @@ def get_sina_klines_batch(codes: list[str]) -> dict:
             result[code] = {
                 "klines_20d": klines[-20:] if len(klines) >= 20 else klines,
                 "klines_60d": klines[-60:] if len(klines) >= 60 else klines,
-                "klines_120d": klines[-120:] if len(klines) >= 120 else klines,
             }
         except (json.JSONDecodeError, KeyError, ValueError):
             pass

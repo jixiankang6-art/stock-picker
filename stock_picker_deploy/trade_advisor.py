@@ -25,7 +25,7 @@ def advise(stock_analysis: dict, klines: list[dict] = None) -> dict:
         if code:
             kmap = get_sina_klines_batch([code])
             kb = kmap.get(code, {})
-            klines = (kb.get("klines_120d") or kb.get("klines_60d") or kb.get("klines_20d") or [])
+            klines = (kb.get("klines_60d") or kb.get("klines_20d") or [])
 
     if len(klines) < 14:
         return _fallback(cur)
