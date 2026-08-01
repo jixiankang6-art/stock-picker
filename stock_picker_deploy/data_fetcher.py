@@ -40,16 +40,11 @@ def _curl_json(url, timeout=10):
 
 # ===================== 大盘指数（腾讯） =====================
 
-_INDEX_MAP = [
-    ("sh000001", "上证指数"), ("sz399001", "深证成指"),
-    ("sh000300", "沪深300"), ("sh000905", "中证500"),
-    ("sz399006", "创业板指"), ("sh000688", "科创50"),
-]
-
-
 def get_market_indices() -> list[dict]:
-    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(c for c,_ in _INDEX_MAP)}")
+    codes = [c for c, _ in _INDEX_MAP]
+    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(codes)}")
     result = []
+    code_to_region = {c: r for c, r in _INDEX_MAP}
     for line in text.strip().split("\n"):
         if '="' not in line:
             continue
@@ -58,12 +53,24 @@ def get_market_indices() -> list[dict]:
             continue
         cur = float(parts[3])
         prev = float(parts[4]) if parts[4] else cur
+        pct = round((cur - prev) / prev * 100, 2) if prev else 0
         result.append({
             "name": parts[1], "price": round(cur, 2),
             "change": round(cur - prev, 2),
-            "change_pct": round((cur - prev) / prev * 100, 2) if prev else 0,
+            "change_pct": pct,
+            "region": code_to_region.get(parts[2], "A股"),
         })
     return result
+
+
+# ===================== 指数代码 =====================
+
+_INDEX_MAP = [
+    ("sh000001","A股"), ("sz399001","A股"), ("sh000300","A股"),
+    ("sh000905","A股"), ("sz399006","A股"), ("sh000688","A股"),
+    ("us.INX","美股"), ("usNDX","美股"), ("usDJI","美股"),
+    ("hkHSI","港股"),
+]
 
 
 # ===================== 板块资金流 =====================
