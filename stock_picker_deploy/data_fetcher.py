@@ -41,10 +41,19 @@ def _curl_json(url, timeout=10):
 # ===================== 大盘指数（腾讯） =====================
 
 def get_market_indices() -> list[dict]:
-    codes = [c for c, _ in _INDEX_MAP]
-    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(codes)}")
+    # A股
+    cn_codes = ["sh000001","sz399001","sh000300","sh000905","sz399006","sh000688"]
+    text_cn = _curl_text(f"https://qt.gtimg.cn/q={','.join(cn_codes)}")
+    result = _parse_indices(text_cn, "A股")
+    # 全球
+    gl_codes = ["us.INX","usNDX","usDJI","hkHSI"]
+    text_gl = _curl_text(f"https://qt.gtimg.cn/q={','.join(gl_codes)}")
+    result += _parse_indices(text_gl, "全球")
+    return result
+
+
+def _parse_indices(text: str, region: str) -> list[dict]:
     result = []
-    code_to_region = {c: r for c, r in _INDEX_MAP}
     for line in text.strip().split("\n"):
         if '="' not in line:
             continue
@@ -58,7 +67,7 @@ def get_market_indices() -> list[dict]:
             "name": parts[1], "price": round(cur, 2),
             "change": round(cur - prev, 2),
             "change_pct": pct,
-            "region": code_to_region.get(parts[2], "A股"),
+            "region": region,
         })
     return result
 
