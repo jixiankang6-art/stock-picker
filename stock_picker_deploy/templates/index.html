@@ -187,7 +187,7 @@ async function pickSector(name){
     all.forEach(function(s){html+=stockRow(s);});
     html+='</div>';
     document.getElementById('stock-content').innerHTML=html;
-    document.getElementById('stock-title').textContent=name+' · '+(rec.length?'精选 '+rec.length+' 只':'成分股')+' <span id="score-status" style="font-size:11px;color:var(--orange);font-weight:500">评分计算中...</span>';
+    document.getElementById('stock-title').textContent=name+' · 成分股 <span id="score-status" style="font-size:11px;color:var(--orange);font-weight:500">评分计算中...</span>';
     stockCacheHTML=html;
     // 异步评分
     scoreAndRefresh(name,all);
