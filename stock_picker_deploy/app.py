@@ -96,34 +96,22 @@ def api_sector_stocks(name: str):
         if not stocks:
             return jsonify({"code": -1, "msg": f"「{name}」板块无匹配成分股", "data": []})
 
-        # 补实时行情 + K线 + 评分
+               # 补实时行情
         codes = [s["代码"] for s in stocks]
-        # 只取前 100 只做深度评分（避免过多 API 调用）
-        score_codes = codes[:100]
-        quote_map = _batch_quote(score_codes)
-
-        # 评分（取前100只，K线成本可控）
-        from stock_scorer import score_stocks
-        from data_fetcher import get_sina_klines_batch, get_stocks_quote_extra
-        klines_map = get_sina_klines_batch(score_codes) if score_codes else {}
-        extra_map = get_stocks_quote_extra(score_codes) if score_codes else {}
-        scored = score_stocks(score_codes, klines_map, extra_map)
-        score_lookup = {s["代码"]: s for s in scored}
+        quote_map = _batch_quote(codes[:300])
 
         result = []
         for s in stocks:
             code = s["代码"]
             q = quote_map.get(code, {})
-            sc = score_lookup.get(code, {})
             result.append({
                 "代码": code, "名称": q.get("名称", s["名称"]),
                 "最新价": q.get("最新价", 0), "涨跌幅": q.get("涨跌幅", 0),
-                "评分": sc.get("评分", 0),
-                "评分明细": sc.get("评分明细", {}),
-                "推荐": sc.get("推荐", ""),
+                "评分": 0, "评分明细": {}, "推荐": "",
             })
-        result.sort(key=lambda x: (x["评分"], x["涨跌幅"]), reverse=True)
+        result.sort(key=lambda x: x["涨跌幅"], reverse=True)
         return jsonify({"code": 0, "data": result, "count": len(result)})
+
     except Exception as e:
         return jsonify({"code": -1, "msg": str(e), "data": []})
 
