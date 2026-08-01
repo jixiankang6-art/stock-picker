@@ -187,7 +187,7 @@ async function pickSector(name){
     all.forEach(function(s){html+=stockRow(s);});
     html+='</div>';
     document.getElementById('stock-content').innerHTML=html;
-    document.getElementById('stock-title').innerHTML=name+' · 成分股 <span id="score-status" style="font-size:11px;color:var(--orange);font-weight:500">评分计算中...</span>';
+    document.getElementById('stock-title').innerHTML=name+' · 成分股 <span id="score-status" style="font-size:11px;color:var(--orange);font-weight:500">'+(all.length>100?'评分中（前100只）':'评分计算中...')+'</span>';
     stockCacheHTML=html;
     // 异步评分
     scoreAndRefresh(name,all);
@@ -198,36 +198,39 @@ var scoreTimer=0;
 async function scoreAndRefresh(name,stocks){
   clearTimeout(scoreTimer);
   var statusEl=document.getElementById('score-status');if(statusEl)statusEl.textContent='评分计算中...';
-  var top=stocks,codes=top.map(function(s){return s['代码']});
+  var top=stocks.slice(0,100),codes=top.map(function(s){return s['代码']});
   var scored={},done=0;
-  for(var i=0;i<codes.length;i++){
-    try{var r=await fetch('/api/kline/'+codes[i]+'?days=60');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_120d||kd.klines_60d||kd.klines_20d||[];
-    var closes=kl.map(function(k){return k.close}),volumes=kl.map(function(k){return k.volume});
-    var cur=top[i]['最新价']||closes[closes.length-1]||0,c20=closes.slice(-20),c60=closes.slice(-60),c120=closes.slice(-120);
-    var s=0,cons=0;for(var j=c20.length-1;j>0;j--){if(c20[j]>c20[j-1])cons++;else break;}if(cur>c20[c20.length-1])cons++;
-    s+=Math.min(cons*6,25);
-    if(c20.length>=6){var chg5=(c20[c20.length-1]-c20[c20.length-6])/c20[c20.length-6]*100;s+=Math.min(Math.max(Math.floor(chg5*3+5),0),15)}
-    if(c60.length){var ma60=c60.reduce(function(a,b){return a+b},0)/c60.length;var dev=(cur-ma60)/ma60*100;s+=(dev>=-5&&dev<=5)?15:(dev>=-15&&dev<=15)?10:5}
-    if(volumes.length>=5){var avgV=volumes.slice(-5).reduce(function(a,b){return a+b},0)/5;var vr=volumes[volumes.length-1]/avgV;s+=vr>1.5?12:vr>1.2?8:vr>0.8?4:0}
-    if(top[i]['名称'].indexOf('ST')<0)s+=5;if(c20.length>=20&&c60.length){if(c20.reduce(function(a,b){return a+b},0)/c20.length>ma60)s+=5}
-    if(c120.length>=2&&c120[c120.length-1]>c120[0])s+=5;s+=5;scored[codes[i]]=s;}}catch(e){}
+  for(var batch=0;batch<Math.ceil(codes.length/10);batch++){
+    var batchEnd=Math.min((batch+1)*10,codes.length);
+    for(var i=batch*10;i<batchEnd;i++){
+      try{var r=await fetch('/api/kline/'+codes[i]+'?days=60');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_60d||kd.klines_20d||[];
+      var closes=kl.map(function(k){return k.close}),volumes=kl.map(function(k){return k.volume});
+      var cur=top[i]['最新价']||closes[closes.length-1]||0,c20=closes.slice(-20),c60=closes.slice(-60);
+      var s=0,cons=0;for(var j=c20.length-1;j>0;j--){if(c20[j]>c20[j-1])cons++;else break;}if(cur>c20[c20.length-1])cons++;
+      s+=Math.min(cons*6,25);
+      if(c20.length>=6){var chg5=(c20[c20.length-1]-c20[c20.length-6])/c20[c20.length-6]*100;s+=Math.min(Math.max(Math.floor(chg5*3+5),0),15)}
+      if(c60.length){var ma60=c60.reduce(function(a,b){return a+b},0)/c60.length;var dev=(cur-ma60)/ma60*100;s+=(dev>=-5&&dev<=5)?15:(dev>=-15&&dev<=15)?10:5}
+      if(volumes.length>=5){var avgV=volumes.slice(-5).reduce(function(a,b){return a+b},0)/5;var vr=volumes[volumes.length-1]/avgV;s+=vr>1.5?12:vr>1.2?8:vr>0.8?4:0}
+      if(top[i]['名称'].indexOf('ST')<0)s+=5;if(c20.length>=20&&c60.length){if(c20.reduce(function(a,b){return a+b},0)/c20.length>ma60)s+=5}
+      s+=5;scored[codes[i]]=s;}catch(e){}
+      done++;if(done%10===0||done===codes.length){if(statusEl)statusEl.textContent='评分中 '+done+'/'+codes.length;}
+    }
+    // 每批刷新DOM
+    updateRowScores(scored);
+    refreshRecommend(stocks,scored);
   }
-  // 更新DOM评分
+  if(statusEl)statusEl.textContent='✓ 评分完成';
+  scoreTimer=setTimeout(function(){var st=document.getElementById('score-status');if(st)st.textContent='';},3000);
+}
+
+function updateRowScores(scored){
   var rows=document.querySelectorAll('#stock-content .list-row');
   var rowMap={};rows.forEach(function(r){var c=r.querySelector('.meta');if(c){var code=c.textContent.trim().split(' · ')[0];if(code)rowMap[code]=r;}});
   Object.keys(scored).forEach(function(code){
     var score=scored[code],row=rowMap[code];if(!row)return;
     var name=row.querySelector('.body .name');var nameText=name?name.textContent:'';
-    var isST=nameText.indexOf('ST')>=0,rec=score>=60&&!isST;
-    var scoreEl=row.querySelector('.score');if(scoreEl){scoreEl.textContent=score;scoreEl.className='score'+(rec?' high':'');}
-    var avatar=row.querySelector('.avatar');if(rec&&avatar){avatar.style.background='#FFF8E1';avatar.style.color='#B45309';}
-    if(name){
-      var existBadge=name.querySelector('.tag-gold');if(rec&&!existBadge){name.innerHTML=nameText+' <span class="tag tag-gold">⭐ '+score+'分</span>';}
-      else if(!rec&&existBadge){name.innerHTML=nameText;}
-    }
+    var scoreEl=row.querySelector('.score');if(scoreEl){scoreEl.textContent=score;scoreEl.className='score'+(score>=60?' high':'');}
   });
-  // 刷新顶部精选区
-  refreshRecommend(stocks,scored);
 }
 
 function refreshRecommend(stocks,scored){
