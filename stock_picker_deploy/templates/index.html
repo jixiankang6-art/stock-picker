@@ -193,7 +193,58 @@ async function pickSector(name){
     document.getElementById('stock-content').innerHTML=html;
     document.getElementById('stock-title').textContent=name+' · '+(rec.length?'精选 '+rec.length+' 只':'成分股');
     stockCacheHTML=html;
+    // 异步评分（不阻塞显示）
+    scoreAndRefresh(name,all);
   }catch(e){document.getElementById('stock-content').innerHTML='<p style="color:var(--hint)">加载失败</p>';}
+}
+
+async function scoreAndRefresh(name,stocks){
+  var top=stocks.slice(0,20),codes=top.map(function(s){return s['代码']});
+  var scored={};
+  for(var i=0;i<codes.length;i++){
+    try{var r=await fetch('/api/kline/'+codes[i]+'?days=120');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_120d||kd.klines_60d||kd.klines_20d||[];
+    var closes=kl.map(function(k){return k.close}),volumes=kl.map(function(k){return k.volume});
+    var cur=top[i]['最新价']||closes[closes.length-1]||0,c20=closes.slice(-20),c60=closes.slice(-60),c120=closes.slice(-120);
+    var s=0,cons=0;for(var j=c20.length-1;j>0;j--){if(c20[j]>c20[j-1])cons++;else break;}if(cur>c20[c20.length-1])cons++;
+    s+=Math.min(cons*6,25);
+    if(c20.length>=6){var chg5=(c20[c20.length-1]-c20[c20.length-6])/c20[c20.length-6]*100;s+=Math.min(Math.max(Math.floor(chg5*3+5),0),15)}
+    if(c60.length){var ma60=c60.reduce(function(a,b){return a+b},0)/c60.length;var dev=(cur-ma60)/ma60*100;s+=(dev>=-5&&dev<=5)?15:(dev>=-15&&dev<=15)?10:5}
+    if(volumes.length>=5){var avgV=volumes.slice(-5).reduce(function(a,b){return a+b},0)/5;var vr=volumes[volumes.length-1]/avgV;s+=vr>1.5?12:vr>1.2?8:vr>0.8?4:0}
+    if(top[i]['名称'].indexOf('ST')<0)s+=5;if(c20.length>=20&&c60.length){if(c20.reduce(function(a,b){return a+b},0)/c20.length>ma60)s+=5}
+    if(c120.length>=2&&c120[c120.length-1]>c120[0])s+=5;s+=5;scored[codes[i]]=s;}}catch(e){}
+  }
+  // 更新DOM评分
+  var rows=document.querySelectorAll('#stock-content .list-row');
+  var rowMap={};rows.forEach(function(r){var c=r.querySelector('.meta');if(c){var code=c.textContent.trim().split(' · ')[0];if(code)rowMap[code]=r;}});
+  Object.keys(scored).forEach(function(code){
+    var score=scored[code],row=rowMap[code];if(!row)return;
+    var name=row.querySelector('.body .name');var nameText=name?name.textContent:'';
+    var isST=nameText.indexOf('ST')>=0,rec=score>=60&&!isST;
+    var scoreEl=row.querySelector('.score');if(scoreEl){scoreEl.textContent=score;scoreEl.className='score'+(rec?' high':'');}
+    var avatar=row.querySelector('.avatar');if(rec&&avatar){avatar.style.background='#FFF8E1';avatar.style.color='#B45309';}
+    if(name){
+      var existBadge=name.querySelector('.tag-gold');if(rec&&!existBadge){name.innerHTML=nameText+' <span class="tag tag-gold">⭐ '+score+'分</span>';}
+      else if(!rec&&existBadge){name.innerHTML=nameText;}
+    }
+  });
+  // 刷新顶部精选区
+  refreshRecommend(stocks,scored);
+}
+
+function refreshRecommend(stocks,scored){
+  var rec=[],nrec=[];stocks.forEach(function(s){var sc=scored[s['代码']]||0;s['评分']=sc;if(sc>=60&&s['名称'].indexOf('ST')<0)rec.push(s);else nrec.push(s);});
+  var html='';
+  if(rec.length){
+    html+='<div class="card" style="border:2px solid #FFD700;position:relative"><div style="position:absolute;top:-11px;left:16px;background:linear-gradient(135deg,#FFD700,#FFA500);color:#fff;padding:2px 12px;border-radius:8px;font-size:12px;font-weight:700">⭐ 精选推荐 · '+rec.length+' 只</div><div style="margin-top:10px">';
+    rec.forEach(function(s){html+=stockRow(s);});html+='</div></div>';
+  }
+  html+='<div class="card" style="margin-top:8px"><h3>📋 全部成分股 · '+stocks.length+' 只</h3>';
+  stocks.sort(function(a,b){return b['评分']-a['评分']});
+  stocks.forEach(function(s){html+=stockRow(s);});
+  html+='</div>';
+  document.getElementById('stock-content').innerHTML=html;
+  stockCacheHTML=html;
+  document.getElementById('stock-title').textContent=curSector+' · '+(rec.length?'精选 '+rec.length+' 只':'成分股');
 }
 
 function stockRow(s){
