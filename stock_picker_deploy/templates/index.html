@@ -137,18 +137,23 @@ function api(p){return fetch(p).then(function(r){return r.json()});}
 async function loadMarket(){
   var ld=document.getElementById('market-loading');
   try{
-    var d=await api('/api/market');if(d.code!==0)return;
+    var controller=new AbortController();
+    var timeout=setTimeout(function(){controller.abort();},25000);
+    var r=await fetch('/api/market',{signal:controller.signal});
+    clearTimeout(timeout);
+    var d=await r.json();
+    if(d.code!==0)return;
     var cn=[],gl=[];
     d.data.forEach(function(i){
-      var r=i.region||'A股';
+      var reg=i.region||'A股';
       var cls=i.change_pct>=0?'up':i.change_pct===0?'flat':'down';
       var t='<div class="market-tile"><div class="name">'+i.name+'</div><div class="val '+cls+'">'+i.price.toFixed(2)+'</div><div class="chg '+cls+'">'+(i.change_pct>=0?'+':'')+i.change_pct.toFixed(2)+'%</div></div>';
-      if(r==='A股')cn.push(t);else gl.push(t);
+      if(reg==='A股')cn.push(t);else gl.push(t);
     });
     ld.style.display='none';
     document.getElementById('market-cn').innerHTML=cn.join('');
     document.getElementById('market-global').innerHTML=gl.join('')+'<div class="market-tile" style="opacity:.5"><div class="name">日经/韩国综指</div><div class="val flat">--</div><div class="chg flat">暂不支持</div></div>';
-  }catch(e){ld.innerHTML='<p>加载失败</p>'}
+  }catch(e){ld.innerHTML='<div style="text-align:center;padding:20px;color:var(--hint)"><p>服务器休眠中，请稍后重试</p><button class="btn-secondary" style="margin-top:8px" onclick="loadMarket()">刷新</button></div>'}
 }
 
 // ===== 板块扫描 =====
