@@ -1,0 +1,11 @@
+# 股票投资选择工具 — Render 部署配置
+
+services:
+  - type: web
+    name: stock-picker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app -b 0.0.0.0:$PORT
+    envVars:
+      - key: FLASK_ENV
+        value: production
