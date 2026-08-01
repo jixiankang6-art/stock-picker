@@ -191,16 +191,19 @@ async function pickSector(name){
     all.forEach(function(s){html+=stockRow(s);});
     html+='</div>';
     document.getElementById('stock-content').innerHTML=html;
-    document.getElementById('stock-title').textContent=name+' · '+(rec.length?'精选 '+rec.length+' 只':'成分股');
+    document.getElementById('stock-title').textContent=name+' · '+(rec.length?'精选 '+rec.length+' 只':'成分股')+' <span id="score-status" style="font-size:11px;color:var(--orange);font-weight:500">评分计算中...</span>';
     stockCacheHTML=html;
-    // 异步评分（不阻塞显示）
+    // 异步评分
     scoreAndRefresh(name,all);
   }catch(e){document.getElementById('stock-content').innerHTML='<p style="color:var(--hint)">加载失败</p>';}
 }
 
+var scoreTimer=0;
 async function scoreAndRefresh(name,stocks){
+  clearTimeout(scoreTimer);
+  var statusEl=document.getElementById('score-status');if(statusEl)statusEl.textContent='评分计算中...';
   var top=stocks.slice(0,20),codes=top.map(function(s){return s['代码']});
-  var scored={};
+  var scored={},done=0;
   for(var i=0;i<codes.length;i++){
     try{var r=await fetch('/api/kline/'+codes[i]+'?days=120');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_120d||kd.klines_60d||kd.klines_20d||[];
     var closes=kl.map(function(k){return k.close}),volumes=kl.map(function(k){return k.volume});
