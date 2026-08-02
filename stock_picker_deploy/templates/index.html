@@ -126,7 +126,7 @@ function sw(v){
   window.scrollTo(0,0);
   if(v==='market')loadMarket();
 }
-function gb(){if(curView==='analyze')sw('stock');else if(curView==='stock')sw('sector');}
+function goBack(){if(curView==='analyze')sw('stock');else if(curView==='stock')sw('sector');}
 
 document.querySelectorAll('.tabbar-item').forEach(function(i){i.addEventListener('click',function(){sw(this.dataset.view)});});
 
@@ -204,7 +204,7 @@ async function scoreAndRefresh(name,stocks){
   for(var batch=0;batch<Math.ceil(codes.length/10);batch++){
     var batchEnd=Math.min((batch+1)*10,codes.length);
     for(var i=batch*10;i<batchEnd;i++){
-      try{var r=await fetch('/api/kline/'+codes[i]+'?days=60');var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_60d||kd.klines_20d||[];
+      try{var ctrl=new AbortController();var tmr=setTimeout(function(){ctrl.abort();},15000);var r=await fetch('/api/kline/'+codes[i]+'?days=60',{signal:ctrl.signal});clearTimeout(tmr);var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_60d||kd.klines_20d||[];
       var closes=kl.map(function(k){return k.close}),volumes=kl.map(function(k){return k.volume});
       var cur=top[i]['最新价']||closes[closes.length-1]||0,c20=closes.slice(-20),c60=closes.slice(-60);
       var s=0,cons=0;for(var j=c20.length-1;j>0;j--){if(c20[j]>c20[j-1])cons++;else break;}if(cur>c20[c20.length-1])cons++;
