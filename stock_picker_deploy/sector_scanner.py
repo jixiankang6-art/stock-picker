@@ -33,13 +33,27 @@ def scan_consecutive_inflow(min_days: int = 2) -> list[dict]:
         sector_code = str(row.get("板块代码", ""))
 
         if consecutive >= min_days and chg_pct > 0:
+            flow_yi = float(row.get("主力净流入", 0)) / 1e8
+            money_level = get_money_flow_level(abs(flow_yi))
             result.append({
                 "板块名称": name,
                 "板块代码": sector_code,
                 "涨跌幅": round(chg_pct, 2),
                 "连续流入天数": consecutive,
+                "日均主力资金": round(abs(flow_yi), 2),
+                "资金等级": money_level,
                 "扫描时间": today,
             })
 
     result.sort(key=lambda x: x["连续流入天数"], reverse=True)
     return result
+
+
+def get_money_flow_level(daily_avg_flow: float) -> str:
+    """板块日均主力净流入（亿）→ 优先级"""
+    if daily_avg_flow >= 2.0:
+        return "高优先级"
+    elif daily_avg_flow >= 0.5:
+        return "正常"
+    else:
+        return "低优先级"

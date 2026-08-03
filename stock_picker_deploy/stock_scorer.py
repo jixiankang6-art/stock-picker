@@ -1,31 +1,62 @@
 """
 推荐评分引擎 — 多维度打分，辅助选股决策
+v2: 研报过滤 + 流动性过滤
 """
 import json
 import math
 
 
-def score_stocks(codes: list[str], kline_data: dict, quotes: dict) -> list[dict]:
+def score_stocks(
+    codes: list[str],
+    kline_data: dict,
+    quotes: dict,
+    research_data: dict = None,
+    liquidity_data: dict = None,
+) -> list[dict]:
     """
     对一批股票打分，返回带评分的结果列表。
 
     codes: 股票代码列表
-    kline_data: {code: {klines_20d, klines_60d, klines_120d}} — 来自 Sina K 线
+    kline_data: {code: {klines_20d, klines_60d}} — 来自 Sina K 线
     quotes: {code: {名称, 最新价, 涨跌幅, 换手率, 量比, 总股本}} — 来自腾讯
+    research_data: {code: {count, buy_ratio, ratings}} — 可选，用于研报过滤
+    liquidity_data: {code: avg_turnover_wan} — 可选，用于流动性过滤
     """
+    research_data = research_data or {}
+    liquidity_data = liquidity_data or {}
+
     results = []
     for code in codes:
         kd = kline_data.get(code, {})
         q = quotes.get(code, {})
+        name = q.get("名称", code)
+
+        # 硬过滤1：流动性不足
+        avg_turnover = liquidity_data.get(code, 0)
+        if avg_turnover and avg_turnover < 3000:
+            continue  # 5日均成交额 < 3000万 → 踢出
+
+        # 硬过滤2：0研报覆盖
+        rd = research_data.get(code, {})
+        report_count = rd.get("count", -1)
+        if report_count == 0:
+            continue  # 过去90天无研报 → 不进候选
+
         score, detail = _score_one(code, q, kd)
+
+        # 研报减半分：买入比 < 50%
+        if report_count > 0 and rd.get("buy_ratio", 0) < 0.5:
+            score = max(score // 2, 10)
+            detail["研报"] = f"买入比{rd['buy_ratio']*100:.0f}%→减半"
+
         results.append({
             "代码": code,
-            "名称": q.get("名称", code),
+            "名称": name,
             "最新价": q.get("最新价", 0),
             "涨跌幅": q.get("涨跌幅", 0),
             "评分": score,
             "评分明细": detail,
-            "推荐": "⭐" if score >= 60 and not _is_st(q.get("名称", "")) else "",
+            "推荐": "⭐" if score >= 60 and not _is_st(name) else "",
         })
     results.sort(key=lambda x: x["评分"], reverse=True)
     return results

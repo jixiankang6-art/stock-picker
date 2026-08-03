@@ -657,3 +657,129 @@ def get_stock_business(code: str) -> dict:
         "注册资本": jbzl.get("zczb", ""),
         "员工数": jbzl.get("gyrs", ""),
     }
+
+
+# ===================== 基本面过滤 =====================
+
+def get_stock_research_report(code: str) -> dict:
+    """
+    获取过去90天研报数量 + 买入/增持比例。
+    返回 {"count": int, "buy_ratio": float(0-1), "ratings": dict}
+    count=0 意味着无机构覆盖。
+    """
+    from datetime import datetime, timedelta
+    d90 = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
+    ts = str(int(datetime.now().timestamp() * 1000))
+    url = (
+        f"https://reportapi.eastmoney.com/report/list"
+        f"?code={code}&beginTime={d90}&endTime={today}"
+        f"&pageNo=1&pageSize=50&qType=0&_{ts}"
+    )
+    text = _curl_text(url, timeout=8)
+    try:
+        data = json.loads(text)
+        items = data.get("data", [])
+        if not items:
+            return {"count": 0, "buy_ratio": 0, "ratings": {}}
+        ratings = {}
+        for it in items:
+            rn = it.get("emRatingName", "") or it.get("sRatingName", "")
+            if rn:
+                ratings[rn] = ratings.get(rn, 0) + 1
+        total = data.get("hits", len(items)) or len(items)
+        buy_count = sum(
+            v for k, v in ratings.items()
+            if any(w in k for w in ["买入", "增持", "强烈推荐", "推荐"])
+        )
+        return {
+            "count": total,
+            "buy_ratio": round(buy_count / max(total, 1), 2),
+            "ratings": ratings,
+        }
+    except Exception:
+        return {"count": -1, "buy_ratio": 0, "ratings": {}}
+
+
+def get_stock_liquidity_data(codes: list[str]) -> dict:
+    """
+    5日均成交额（万元）。< 3000万 → 流动性不足。
+    返回 {code: avg_turnover_wan}
+    """
+    result = {}
+    for code in codes:
+        symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
+        url = (
+            f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+            f"CN_MarketData.getKLineData?symbol={symbol}&scale=240&ma=no&datalen=5"
+        )
+        text = _curl_text(url, timeout=8)
+        if not text:
+            continue
+        try:
+            data = json.loads(text)
+            turnovers = []
+            for k in data:
+                if k.get("volume") and k.get("close"):
+                    tv = float(k["volume"]) * float(k["close"]) / 10000  # 万元
+                    turnovers.append(tv)
+            if turnovers:
+                result[code] = round(sum(turnovers) / len(turnovers), 2)
+        except Exception:
+            pass
+    return result
+
+
+def get_market_signal() -> dict:
+    """
+    大盘信号面板：上涨比例、放量/缩量判断。
+    返回 {"breadth": pct, "volume_level": "缩量"|"放量"|"平量", "state": str, "flow_direction": "流入"|"流出"}
+    """
+    # 腾讯实时行情 — 沪深300成分股采样
+    hs300_codes = [
+        "sh000300",  # 沪深300指数本身
+    ]
+    # 采样上证+深证+创业板+科创50
+    sample = ["sh000001", "sz399001", "sz399006", "sh000688"]
+    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(sample)}")
+    up_count = 0
+    changes = []
+    for line in text.strip().split("\n"):
+        if '="' not in line:
+            continue
+        parts = line.split('"')[1].split("~")
+        if len(parts) < 5:
+            continue
+        cur = float(parts[3]) if parts[3] else 0
+        prev = float(parts[4]) if parts[4] else cur
+        chg = (cur - prev) / prev if prev else 0
+        changes.append(chg)
+        if chg > 0:
+            up_count += 1
+    breadth = round(up_count / max(len(changes), 1) * 100)
+    avg_chg = sum(changes) / max(len(changes), 1) if changes else 0
+    flow_direction = "流入" if avg_chg > 0 else "流出"
+
+    # 放量/缩量：从科创50/创业板当日量比判断
+    if avg_chg > 0:
+        volume_level = "放量" if any(abs(c) > 0.02 for c in changes) else "缩量"
+    else:
+        volume_level = "放量" if any(abs(c) > 0.02 for c in changes) else "缩量"
+
+    # 状态判断
+    state = "震荡市"
+    if flow_direction == "流入" and breadth >= 50 and volume_level == "缩量":
+        state = "趋势市场"
+    elif flow_direction == "流入" and breadth >= 50 and volume_level == "放量":
+        state = "加速期"
+    elif flow_direction == "流入" and breadth < 30 and volume_level == "缩量":
+        state = "震荡市"
+    elif flow_direction == "流出" and breadth < 30 and volume_level == "放量":
+        state = "加速下跌"
+
+    return {
+        "breadth": breadth,
+        "volume_level": volume_level,
+        "state": state,
+        "flow_direction": flow_direction,
+    }

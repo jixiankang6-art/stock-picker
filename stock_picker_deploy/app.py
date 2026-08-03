@@ -10,7 +10,7 @@ from flask import Flask, jsonify, render_template, request
 from sector_scanner import scan_consecutive_inflow
 from stock_analyzer import analyze_stock
 from trade_advisor import advise
-from data_fetcher import get_market_indices, get_sector_major_stocks, _PT_SECTOR_MAP, _curl_text
+from data_fetcher import get_market_indices, get_sector_major_stocks, _PT_SECTOR_MAP, _curl_text, get_market_signal
 
 app = Flask(__name__)
 
@@ -48,6 +48,16 @@ def api_market():
         return jsonify({"code": 0, "data": data})
     except Exception as e:
         return jsonify({"code": -1, "msg": str(e), "data": []})
+
+
+@app.route("/api/market/signal")
+def api_market_signal():
+    """大盘信号面板"""
+    try:
+        data = get_market_signal()
+        return jsonify({"code": 0, "data": data})
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e), "data": None})
 
 
 @app.route("/api/sectors")
@@ -96,7 +106,7 @@ def api_sector_stocks(name: str):
         if not stocks:
             return jsonify({"code": -1, "msg": f"「{name}」板块无匹配成分股", "data": []})
 
-               # 补实时行情
+        # 补实时行情（不做服务端评分，太慢）
         codes = [s["代码"] for s in stocks]
         quote_map = _batch_quote(codes[:300])
 
@@ -111,7 +121,6 @@ def api_sector_stocks(name: str):
             })
         result.sort(key=lambda x: x["涨跌幅"], reverse=True)
         return jsonify({"code": 0, "data": result, "count": len(result)})
-
     except Exception as e:
         return jsonify({"code": -1, "msg": str(e), "data": []})
 
@@ -184,6 +193,17 @@ def api_stock_advise(code: str):
         analysis = analyze_stock(code)
         result = advise(analysis)
         return jsonify({"code": 0, "data": result})
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e), "data": None})
+
+
+@app.route("/api/stock/<code>/research")
+def api_stock_research(code: str):
+    """个股研报覆盖"""
+    try:
+        from data_fetcher import get_stock_research_report
+        data = get_stock_research_report(code)
+        return jsonify({"code": 0, "data": data})
     except Exception as e:
         return jsonify({"code": -1, "msg": str(e), "data": None})
 
