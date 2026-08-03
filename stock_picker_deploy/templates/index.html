@@ -78,6 +78,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;font
 <div class="market-grid" id="market-cn"></div>
 <div class="section-title" style="margin-top:20px">全球市场</div>
 <div class="market-grid" id="market-global"></div>
+<div id="market-signal" style="margin-top:12px"></div>
 <div class="loading" id="market-loading"><div class="spinner"></div><p>加载中...</p></div>
 </div></div>
 
@@ -149,7 +150,31 @@ async function loadMarket(){
     ld.style.display='none';
     document.getElementById('market-cn').innerHTML=cn.join('');
     document.getElementById('market-global').innerHTML=gl.join('');
+    // 大盘信号
+    loadMarketSignal();
   }catch(e){ld.innerHTML='<div style="text-align:center;padding:20px;color:var(--hint)"><p>服务器响应超时</p><button class="btn-secondary" style="margin-top:8px" onclick="loadMarket()">重试</button></div>'}
+}
+
+async function loadMarketSignal(){
+  try{
+    var r=await fetch('/api/market/signal');var d=await r.json();
+    if(d.code!==0)return;var s=d.data;
+    var stateColors={趋势市场:'#34C759',加速期:'#FF9500',震荡市:'#8E8E93',加速下跌:'#FF3B30'};
+    var stateIcon={趋势市场:'📈',加速期:'🚀',震荡市:'📊',加速下跌:'📉'};
+    var color=stateColors[s.state]||'#8E8E93',icon=stateIcon[s.state]||'📊';
+    var html='<div class="card"><h3>'+icon+' 市场状态</h3>';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+    html+='<span style="font-size:13px;color:var(--hint)">当前</span>';
+    html+='<span style="font-size:16px;font-weight:700;color:'+color+'">'+s.state+'</span></div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px">';
+    html+='<div class="indicator"><div class="label">市场宽度</div><div class="val">'+s.breadth+'%</div></div>';
+    html+='<div class="indicator"><div class="label">成交量</div><div class="val">'+s.volume_level+'</div></div>';
+    html+='<div class="indicator"><div class="label">资金方向</div><div class="val '+(s.flow_direction==='流入'?'up':'down')+'">'+s.flow_direction+'</div></div>';
+    html+='</div>';
+    if(s.state==='加速期')html+='<div style="margin-top:8px;padding:8px;background:#FFF3E0;border-radius:8px;font-size:12px;color:#E65100">⚠ 加速期建议缩短止盈线</div>';
+    html+='</div>';
+    document.getElementById('market-signal').innerHTML=html;
+  }catch(e){}
 }
 
 // ===== 板块扫描 =====
@@ -165,7 +190,11 @@ async function scanSectors(){
     var html='';d.data.forEach(function(s){
       var days=Math.min(s['连续流入天数'],5),stars='★'.repeat(days)+'☆'.repeat(Math.max(5-days,0));
       var rec=days>=4;
-      html+='<div class="sector-row" onclick="pickSector(\''+s['板块名称']+'\')"><div class="sector-info"><div class="name">'+s['板块名称']+(rec?' <span class="rec-badge">⭐ 优选</span>':'')+'</div><div class="stars">'+stars+' '+s['连续流入天数']+' 天</div></div><div class="sector-stats"><div class="chg '+(s['涨跌幅']>=0?'up':'down')+'">'+(s['涨跌幅']>=0?'+':'')+s['涨跌幅']+'%</div><div class="days">连续 '+s['连续流入天数']+' 天</div></div></div>';
+      var mLevel=s['资金等级']||'';
+      var moneyTag='';
+      if(mLevel==='高优先级')moneyTag=' <span class="tag" style="background:#E8F5E9;color:#2E7D32">大资金</span>';
+      else if(mLevel==='低优先级')moneyTag=' <span class="tag tag-gray">小额</span>';
+      html+='<div class="sector-row" onclick="pickSector(\''+s['板块名称']+'\')"><div class="sector-info"><div class="name">'+s['板块名称']+(rec?' <span class="rec-badge">⭐ 优选</span>':'')+moneyTag+'</div><div class="stars">'+stars+' '+s['连续流入天数']+' 天 · 日均'+(s['日均主力资金']||0)+'亿</div></div><div class="sector-stats"><div class="chg '+(s['涨跌幅']>=0?'up':'down')+'">'+(s['涨跌幅']>=0?'+':'')+s['涨跌幅']+'%</div><div class="days">连续 '+s['连续流入天数']+' 天</div></div></div>';
     });
     document.getElementById('sector-list').innerHTML=html;
   }catch(e){document.getElementById('sector-status').textContent='扫描失败';btn.disabled=false;btn.textContent='重新扫描';}
@@ -204,7 +233,8 @@ async function scoreAndRefresh(name,stocks){
   for(var batch=0;batch<Math.ceil(codes.length/10);batch++){
     var batchEnd=Math.min((batch+1)*10,codes.length);
     for(var i=batch*10;i<batchEnd;i++){
-      try{var ctrl=new AbortController();var tmr=setTimeout(function(){ctrl.abort();},15000);var r=await fetch('/api/kline/'+codes[i]+'?days=60',{signal:ctrl.signal});clearTimeout(tmr);var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_60d||kd.klines_20d||[];
+      try{var ctrl=new AbortController();var tmr=setTimeout(function(){ctrl.abort();},15000);var r=await fetch('/api/kline/'+codes[i]+'?days=60',{signal:ctrl.signal});clearTimeout(tmr);
+      var d=await r.json();if(d.code===0){var kd=d.data,kl=kd.klines_60d||kd.klines_20d||[];
       var closes=kl.map(function(k){return k.close}),volumes=kl.map(function(k){return k.volume});
       var cur=top[i]['最新价']||closes[closes.length-1]||0,c20=closes.slice(-20),c60=closes.slice(-60);
       var s=0,cons=0;for(var j=c20.length-1;j>0;j--){if(c20[j]>c20[j-1])cons++;else break;}if(cur>c20[c20.length-1])cons++;
@@ -299,6 +329,9 @@ async function doAnalyze(){
       k5.forEach(function(k){var u=k.close>=k.open;html+='<tr><td>'+k.date+'</td><td class="tnum">'+k.open+'</td><td class="tnum">'+k.high+'</td><td class="tnum">'+k.low+'</td><td class="tnum '+(u?'up':'down')+'">'+k.close+'</td></tr>';});
       html+='</tbody></table></div>';
     }
+    // 研报 + 流动性
+    html+='<div id="research-box" style="margin-top:10px;text-align:center;color:var(--hint);font-size:12px">加载研报数据...</div>';
+    loadResearchAndLiquidity(code);
     // 交易建议
     try{var ad=await api('/api/stock/'+code+'/advise');if(ad.code===0&&ad.data['建议买点']!=='数据不足'){var t=ad.data;html+=adviceHTML(t);}}catch(e){}
     html+='</div>';
@@ -321,6 +354,23 @@ function adviceHTML(t){
   h+='</div>';return h;
 }
 function toggleBiz(){var el=document.getElementById('biz-text'),btn=document.getElementById('biz-arrow');if(el.classList.contains('biz-expande')){el.classList.remove('biz-expande');btn.textContent='展开全文';}else{el.classList.add('biz-expande');btn.textContent='收起';}}
+
+async function loadResearchAndLiquidity(code){
+  var box=document.getElementById('research-box');if(!box)return;
+  box.innerHTML='加载研报...';
+  try{
+    var r=await fetch('/api/stock/'+code+'/research');var d=await r.json();
+    if(d.code===0&&d.data.count>=0){
+      var rd=d.data,count=rd.count;
+      if(count===0)box.innerHTML='<span style="color:#FF9500">⚠ 过去90天无机构研报覆盖</span>';
+      else{
+        var buyPct=rd.buy_ratio*100;
+        var cls=buyPct>=50?'#34C759':'#FF9500';
+        box.innerHTML='📋 90天研报：'+count+'篇 | 买入/增持占比：<b style="color:'+cls+'">'+buyPct.toFixed(0)+'%</b>';
+      }
+    }else{box.innerHTML='';}
+  }catch(e){box.innerHTML='';}
+}
 
 // 初始化
 loadMarket();
