@@ -827,26 +827,52 @@ def get_market_signal() -> dict:
 
 
 def get_concept_sector_data() -> list[dict]:
-    """扫描概念板块行情 — 用腾讯行情查询各概念的代表个股均价"""
+    """扫描概念板块行情 — 基于已有股票映射 + 腾讯行情"""
+    import json, os
+    mapping = {}
+    map_path = os.path.join(os.path.dirname(__file__), "data", "stock_industry_map.json")
+    try:
+        with open(map_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        for code, info in raw.items():
+            industry = info.get("industry", "")
+            mapping.setdefault(industry, []).append(code)
+    except Exception:
+        pass
+
+    # 概念→关键词匹配
+    concept_keywords = {
+        "人工智能": ["人工智能","AI","智能"], "AI应用": ["AI应用","人工智能"],
+        "AIGC概念": ["AIGC","人工智能"], "算力概念": ["算力","云计算","数据中心"],
+        "算力租赁": ["算力","租赁"], "光模块(CPO)": ["光模块","光通信","光纤"],
+        "半导体": ["半导体","芯片","集成电路"], "芯片概念": ["芯片","半导体","集成电路"],
+        "先进封装": ["封装","测试"], "液冷概念": ["液冷","散热","冷却"],
+        "PCB概念": ["PCB","印制电路","电路板"], "存储芯片": ["存储","内存","闪存"],
+        "大数据": ["大数据","数据"], "国产芯片": ["芯片","半导体","国产"],
+        "AI芯片": ["AI芯片","人工智能芯片"], "国产软件": ["软件","国产"],
+        "云计算": ["云计算","云服务"], "元件": ["电子元件","被动元件","电容"],
+        "食品饮料": ["食品","饮料","酒"], "农林牧渔": ["农业","畜牧","渔业","种业"],
+        "医药生物": ["医药","制药","医疗器械","生物"], "公用事业": ["电力","水务","燃气"],
+        "白酒": ["白酒","酒"], "农业种植": ["种子","种植","农业"],
+        "粮食概念": ["粮食","大米","面粉","农产品"], "中药": ["中药","中成药"],
+        "银行": ["银行"], "贵金属": ["黄金","贵金属","白银","铂金"],
+    }
+
     result = []
     for bk_code, bk_name in _CNCEPT_BK:
+        keywords = concept_keywords.get(bk_name, [bk_name])
+        matching = set()
+        for kw in keywords:
+            for ind, codes in mapping.items():
+                if kw in ind:
+                    matching.update(codes[:5])
+        codes_list = list(matching)[:5]
         chg = 0
-        # 尝试东财 push2 查成分股
-        try:
-            url = (
-                "https://push2.eastmoney.com/api/qt/clist/get?"
-                f"fs=b:{bk_code}&fid=f62&po=1&pz=3&pn=1&np=1&fltt=2&invt=2"
-                "&fields=f2,f3,f12,f14"
-            )
-            text = _curl_text(url, timeout=6)
-            if text and text.startswith("{") and "diff" in text:
-                data = json.loads(text)
-                items = data.get("data", {}).get("diff", [])
-                if items:
-                    chgs = [it.get("f3", 0) or 0 for it in items]
-                    chg = round(sum(chgs) / len(chgs), 2)
-        except Exception:
-            pass  # 沙箱/IP限流降级
+        if codes_list:
+            quotes = _cncept_quote_batch(codes_list)
+            chgs = [q["涨跌幅"] for q in quotes.values() if q.get("涨跌幅")]
+            if chgs:
+                chg = round(sum(chgs) / len(chgs), 2)
 
         result.append({
             "板块代码": bk_code,
@@ -855,6 +881,28 @@ def get_concept_sector_data() -> list[dict]:
             "ETF": _CNCEPT_ETF.get(bk_name, []),
         })
     result.sort(key=lambda x: x["涨跌幅"], reverse=True)
+    return result
+
+
+def _cncept_quote_batch(codes: list[str]) -> dict:
+    """批量获取腾讯行情（内部用）"""
+    if not codes:
+        return {}
+    tx_codes = [f"sh{c}" if c.startswith("6") else f"sz{c}" for c in codes[:10]]
+    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(tx_codes)}", timeout=6)
+    result = {}
+    for line in text.strip().split("\n"):
+        if '="' not in line:
+            continue
+        parts = line.split('"')[1].split("~")
+        if len(parts) < 5:
+            continue
+        code = parts[2]
+        cur = float(parts[3]) if parts[3] else 0
+        prev = float(parts[4]) if parts[4] else cur
+        result[code] = {
+            "最新价": cur, "涨跌幅": round((cur - prev) / prev * 100, 2) if prev else 0,
+        }
     return result
 
 

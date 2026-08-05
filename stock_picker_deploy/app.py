@@ -83,29 +83,44 @@ def api_concept_etfs(name: str):
 
 @app.route("/api/concept/<name>/stocks")
 def api_concept_stocks(name: str):
-    """概念板块成分股"""
-    bk_code = None
-    for c, n in _CNCEPT_BK:
-        if n == name:
-            bk_code = c; break
-    if not bk_code:
-        return jsonify({"code": -1, "msg": "未找到", "data": [], "count": 0})
-    try:
-        url = (
-            "https://push2.eastmoney.com/api/qt/clist/get?"
-            f"fs=b:{bk_code}&fid=f3&po=1&pz=200&pn=1&np=1&fltt=2&invt=2"
-            "&fields=f2,f3,f12,f14"
-        )
-        text = _curl_text(url, timeout=10)
-        data = json.loads(text)
-        items = data.get("data", {}).get("diff", [])
-        stocks = [{
-            "代码": it.get("f12",""), "名称": it.get("f14",""),
-            "最新价": it.get("f2",0) or 0, "涨跌幅": it.get("f3",0) or 0, "评分": 0
-        } for it in items]
-        return jsonify({"code": 0, "data": stocks, "count": len(stocks)})
-    except Exception as e:
-        return jsonify({"code": -1, "msg": str(e), "data": [], "count": 0})
+    """概念板块成分股 — 从行业映射关键词匹配"""
+    concept_kw = {
+        "人工智能": ["人工智能","AI","智能"], "AI应用": ["人工智能"],
+        "AIGC概念": ["人工智能"], "算力概念": ["算力","云计算","数据中心"],
+        "算力租赁": ["算力"], "光模块(CPO)": ["光模块","光通信","光纤"],
+        "半导体": ["半导体","芯片","集成电路"], "芯片概念": ["芯片","半导体"],
+        "先进封装": ["封装","测试"], "液冷概念": ["液冷","散热"],
+        "PCB概念": ["PCB"], "存储芯片": ["存储","内存"],
+        "大数据": ["大数据"], "国产芯片": ["芯片","半导体"],
+        "AI芯片": ["AI芯片"], "国产软件": ["软件"],
+        "云计算": ["云计算"], "元件": ["电子元件","被动元件","电容"],
+        "食品饮料": ["食品","饮料","酒"], "农林牧渔": ["农业","畜牧","渔业","种业"],
+        "医药生物": ["医药","制药","医疗"], "公用事业": ["电力","水务","燃气"],
+        "白酒": ["白酒"], "农业种植": ["种子","种植"],
+        "粮食概念": ["粮食","农产品"], "中药": ["中药"],
+        "银行": ["银行"], "贵金属": ["黄金","贵金属","白银"],
+    }
+    kw_list = concept_kw.get(name, [name])
+    with open(DATA_DIR / "stock_industry_map.json", "r", encoding="utf-8") as f:
+        industry_map = json.load(f)
+    matching = set()
+    for kw in kw_list:
+        for code, info in industry_map.items():
+            if kw in info.get("industry", "") or kw in info.get("name", ""):
+                matching.add(code)
+    codes = list(matching)[:200]
+    if not codes:
+        return jsonify({"code": 0, "data": [], "count": 0})
+    quotes = _batch_quote(codes)
+    stocks = []
+    for code in codes:
+        q = quotes.get(code, {})
+        stocks.append({
+            "代码": code, "名称": q.get("名称", code),
+            "最新价": q.get("最新价", 0), "涨跌幅": q.get("涨跌幅", 0),
+            "评分": 0,
+        })
+    return jsonify({"code": 0, "data": stocks, "count": len(stocks)})
 
 
 @app.route("/api/stock/<code>/pe")
