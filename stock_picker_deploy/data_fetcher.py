@@ -98,6 +98,53 @@ _SECTOR_BK = [
     ("BK0421","综合"),
 ]
 
+# 概念板块（AI + 防御）
+_CNCEPT_BK = [
+    ("BK0800","人工智能"),("BK0924","AI应用"),("BK1111","AIGC概念"),
+    ("BK1134","算力概念"),("BK1162","算力租赁"),("BK1035","光模块(CPO)"),
+    ("BK1036","半导体"),("BK0958","芯片概念"),("BK1112","先进封装"),
+    ("BK1104","液冷概念"),("BK0944","PCB概念"),("BK0577","存储芯片"),
+    ("BK0906","大数据"),("BK0891","国产芯片"),("BK1136","AI芯片"),
+    ("BK0455","国产软件"),("BK1072","云计算"),("BK0463","元件"),
+    # 防御板块
+    ("BK0448","食品饮料"),("BK0440","农林牧渔"),("BK0464","医药生物"),
+    ("BK0473","公用事业"),("BK0477","白酒"),("BK0530","农业种植"),
+    ("BK1076","粮食概念"),("BK0485","中药"),("BK0472","银行"),
+    ("BK0446","贵金属"),
+]
+
+# 概念→推荐ETF 映射
+_CNCEPT_ETF = {
+    "人工智能": [("159819","人工智能ETF"),("515070","AI智能ETF")],
+    "AI应用": [("159819","人工智能ETF"),("562800","AI应用ETF")],
+    "AIGC概念": [("159819","人工智能ETF"),("562800","AI应用ETF")],
+    "算力概念": [("516510","云计算ETF"),("560360","算力ETF")],
+    "算力租赁": [("560360","算力ETF"),("516510","云计算ETF")],
+    "光模块(CPO)": [("515050","5GETF"),("159994","通信ETF")],
+    "半导体": [("512480","半导体ETF"),("159813","芯片ETF")],
+    "芯片概念": [("159995","芯片ETF"),("512760","芯片ETF")],
+    "先进封装": [("512480","半导体ETF"),("159995","芯片ETF")],
+    "液冷概念": [("512480","半导体ETF"),("515050","5GETF")],
+    "PCB概念": [("512480","半导体ETF"),("159997","电子ETF")],
+    "存储芯片": [("159995","芯片ETF"),("512480","半导体ETF")],
+    "大数据": [("516000","大数据ETF"),("159739","大数据ETF")],
+    "国产芯片": [("159995","芯片ETF"),("512760","芯片ETF")],
+    "AI芯片": [("159819","人工智能ETF"),("159995","芯片ETF")],
+    "国产软件": [("515230","软件ETF"),("159852","软件ETF")],
+    "云计算": [("516510","云计算ETF"),("168701","金融科技ETF")],
+    "元件": [("159997","电子ETF"),("512480","半导体ETF")],
+    "食品饮料": [("515170","食品饮料ETF"),("159843","食品饮料ETF")],
+    "农林牧渔": [("159825","农业ETF"),("516810","农业ETF")],
+    "医药生物": [("512010","医药ETF"),("159929","医药ETF")],
+    "公用事业": [("561190","电力ETF"),("159611","电力ETF")],
+    "白酒": [("512690","酒ETF"),("159825","食品ETF")],
+    "农业种植": [("159825","农业ETF"),("516810","农业ETF")],
+    "粮食概念": [("159825","农业ETF"),("516810","农业ETF")],
+    "中药": [("560080","中药ETF"),("159647","中药ETF")],
+    "银行": [("512800","银行ETF"),("515290","银行ETF")],
+    "贵金属": [("518880","黄金ETF"),("159934","黄金ETF")],
+}
+
 
 def get_sector_fund_flow() -> list[dict]:
     """
@@ -735,12 +782,8 @@ def get_market_signal() -> dict:
     大盘信号面板：上涨比例、放量/缩量判断。
     返回 {"breadth": pct, "volume_level": "缩量"|"放量"|"平量", "state": str, "flow_direction": "流入"|"流出"}
     """
-    # 腾讯实时行情 — 沪深300成分股采样
-    hs300_codes = [
-        "sh000300",  # 沪深300指数本身
-    ]
     # 采样上证+深证+创业板+科创50
-    sample = ["sh000001", "sz399001", "sz399006", "sh000688"]
+    sample = ["sh000001", "sz399001", "sz399006", "sh000688", "us.INX", "usNDX", "hkHSI"]
     text = _curl_text(f"https://qt.gtimg.cn/q={','.join(sample)}")
     up_count = 0
     changes = []
@@ -760,13 +803,11 @@ def get_market_signal() -> dict:
     avg_chg = sum(changes) / max(len(changes), 1) if changes else 0
     flow_direction = "流入" if avg_chg > 0 else "流出"
 
-    # 放量/缩量：从科创50/创业板当日量比判断
     if avg_chg > 0:
         volume_level = "放量" if any(abs(c) > 0.02 for c in changes) else "缩量"
     else:
         volume_level = "放量" if any(abs(c) > 0.02 for c in changes) else "缩量"
 
-    # 状态判断
     state = "震荡市"
     if flow_direction == "流入" and breadth >= 50 and volume_level == "缩量":
         state = "趋势市场"
@@ -783,3 +824,85 @@ def get_market_signal() -> dict:
         "state": state,
         "flow_direction": flow_direction,
     }
+
+
+def get_concept_sector_data() -> list[dict]:
+    """扫描概念板块行情"""
+    codes = [code for code, _ in _CNCEPT_BK]
+    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(codes)}")
+    code_to_name = {c: n for _, (c, n) in enumerate(_CNCEPT_BK)}
+    result = []
+    for line in text.strip().split("\n"):
+        if '="' not in line:
+            continue
+        parts = line.split('"')[1].split("~")
+        if len(parts) < 5:
+            continue
+        pt_code = "bk" + parts[2]
+        name = code_to_name.get(pt_code, parts[1])
+        cur = float(parts[3]) if parts[3] else 0
+        prev = float(parts[4]) if parts[4] else cur
+        chg = round((cur - prev) / prev * 100, 2) if prev else 0
+        result.append({
+            "板块代码": pt_code,
+            "板块名称": name,
+            "涨跌幅": chg,
+            "最新价": round(cur, 2),
+            "ETF": _CNCEPT_ETF.get(name, []),
+        })
+    result.sort(key=lambda x: x["涨跌幅"], reverse=True)
+    return result
+
+
+def get_international_indices() -> list[dict]:
+    """日韩指数 — Yahoo Finance (仅Render/海外环境可用)"""
+    symbols = [("^N225", "日经225", "日本"), ("^KS11", "韩国KOSPI", "韩国")]
+    result = []
+    for sym, name, region in symbols:
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/"
+            f"{sym}?interval=1d&range=5d"
+        )
+        try:
+            text = _curl_text(url, timeout=8)
+            import json as _json
+            data = _json.loads(text)
+            meta = data["chart"]["result"][0]["meta"]
+            price = meta.get("regularMarketPrice", 0)
+            prev = meta.get("previousClose", price)
+            chg_pct = round((price - prev) / prev * 100, 2) if prev else 0
+            result.append({
+                "name": name, "price": price,
+                "change_pct": chg_pct, "region": region,
+            })
+        except Exception:
+            pass  # 沙箱/国内环境不可用，静默降级
+    return result
+
+
+def get_stock_etfs_for_concept(concept_name: str) -> list[dict]:
+    """返回概念板块对应的推荐ETF行情"""
+    etfs = _CNCEPT_ETF.get(concept_name, [])
+    if not etfs:
+        return []
+    codes = [e[0] for e in etfs]
+    names = {e[0]: e[1] for e in etfs}
+    # 腾讯行情
+    tx_codes = [f"sh{c}" if c.startswith("6") else f"sz{c}" for c in codes]
+    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(tx_codes)}")
+    result = []
+    for line in text.strip().split("\n"):
+        if '="' not in line:
+            continue
+        parts = line.split('"')[1].split("~")
+        if len(parts) < 5:
+            continue
+        cur = float(parts[3])
+        prev = float(parts[4]) if parts[4] else cur
+        result.append({
+            "代码": parts[2],
+            "名称": names.get(parts[2], parts[1]),
+            "最新价": cur,
+            "涨跌幅": round((cur - prev) / prev * 100, 2) if prev else 0,
+        })
+    return result

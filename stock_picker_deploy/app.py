@@ -10,7 +10,7 @@ from flask import Flask, jsonify, render_template, request
 from sector_scanner import scan_consecutive_inflow
 from stock_analyzer import analyze_stock
 from trade_advisor import advise
-from data_fetcher import get_market_indices, get_sector_major_stocks, _PT_SECTOR_MAP, _curl_text, get_market_signal
+from data_fetcher import get_market_indices, get_sector_major_stocks, _PT_SECTOR_MAP, _curl_text, get_market_signal, get_concept_sector_data, get_international_indices, get_stock_etfs_for_concept
 
 app = Flask(__name__)
 
@@ -42,10 +42,11 @@ def index():
 
 @app.route("/api/market")
 def api_market():
-    """大盘概览 — 主要指数行情"""
+    """大盘概览 — 主要指数行情 + 日韩"""
     try:
         data = get_market_indices()
-        return jsonify({"code": 0, "data": data})
+        intl = get_international_indices()
+        return jsonify({"code": 0, "data": data + intl})
     except Exception as e:
         return jsonify({"code": -1, "msg": str(e), "data": []})
 
@@ -56,6 +57,44 @@ def api_market_signal():
     try:
         data = get_market_signal()
         return jsonify({"code": 0, "data": data})
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e), "data": None})
+
+
+@app.route("/api/concepts")
+def api_concepts():
+    """扫描概念板块"""
+    try:
+        data = get_concept_sector_data()
+        return jsonify({"code": 0, "data": data, "count": len(data)})
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e), "data": []})
+
+
+@app.route("/api/concept/<name>/etfs")
+def api_concept_etfs(name: str):
+    """概念板块推荐ETF"""
+    try:
+        data = get_stock_etfs_for_concept(name)
+        return jsonify({"code": 0, "data": data})
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e), "data": []})
+
+
+@app.route("/api/stock/<code>/pe")
+def api_stock_pe(code: str):
+    """个股PE/PB"""
+    try:
+        quote = _batch_quote([code]).get(code, {})
+        return jsonify({
+            "code": 0,
+            "data": {
+                "最新价": quote.get("最新价", 0),
+                "PE": quote.get("PE", "N/A"),
+                "PB": quote.get("PB", "N/A"),
+                "总市值": quote.get("总市值", "N/A"),
+            }
+        })
     except Exception as e:
         return jsonify({"code": -1, "msg": str(e), "data": None})
 
@@ -164,7 +203,7 @@ def _get_industry_keywords(sector_name: str) -> list[str]:
 
 
 def _batch_quote(codes: list[str]) -> dict:
-    """批量获取腾讯行情"""
+    """批量获取腾讯行情，含PE/PB"""
     if not codes:
         return {}
     tx_codes = [f"sh{c}" if c.startswith("6") else f"sz{c}" for c in codes]
@@ -182,6 +221,9 @@ def _batch_quote(codes: list[str]) -> dict:
         result[code] = {
             "名称": parts[1], "最新价": cur,
             "涨跌幅": round((cur - prev) / prev * 100, 2) if prev else 0,
+            "PE": float(parts[38]) if len(parts) > 38 and parts[38] else 0,
+            "PB": float(parts[45]) if len(parts) > 45 and parts[45] else 0,
+            "总市值": float(parts[44]) if len(parts) > 44 and parts[44] else 0,
         }
     return result
 
