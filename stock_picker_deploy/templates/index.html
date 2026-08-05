@@ -205,7 +205,8 @@ async function pickSector(name){
   document.getElementById('stock-content').innerHTML='<div class="loading"><div class="spinner"></div></div>';
   sw('stock');
   try{
-    var d=await api('/api/sector/'+encodeURIComponent(name)+'/stocks');
+    var ep=scanMode==='concept'?'/api/concept/'+encodeURIComponent(name)+'/stocks':'/api/sector/'+encodeURIComponent(name)+'/stocks';
+    var d=await api(ep);
     if(d.code!==0||!d.data.length){document.getElementById('stock-content').innerHTML='<div class="card"><p style="color:var(--hint)">暂无成分股数据</p></div>';return;}
     var all=d.data,html='';
     // ETF区
