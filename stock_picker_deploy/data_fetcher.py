@@ -827,26 +827,31 @@ def get_market_signal() -> dict:
 
 
 def get_concept_sector_data() -> list[dict]:
-    """扫描概念板块行情"""
-    codes = [code for code, _ in _CNCEPT_BK]
-    text = _curl_text(f"https://qt.gtimg.cn/q={','.join(codes)}")
-    code_to_name = {c: n for _, (c, n) in enumerate(_CNCEPT_BK)}
+    """扫描概念板块行情 — 东方财富板块指数"""
+    # 东财 push2his 批量查询
+    secids = ",".join("90." + c for c, _ in _CNCEPT_BK)
+    url = (
+        "https://push2his.eastmoney.com/api/qt/stock/getlist?"
+        f"secids={secids}&fields=f2,f3,f4,f12,f14"
+    )
+    text = _curl_text(url, timeout=10)
+    try:
+        data = json.loads(text)
+        items = data.get("data", {}).get("diff", [])
+    except Exception:
+        return []
+
+    name_map = {c: n for c, n in _CNCEPT_BK}
     result = []
-    for line in text.strip().split("\n"):
-        if '="' not in line:
-            continue
-        parts = line.split('"')[1].split("~")
-        if len(parts) < 5:
-            continue
-        pt_code = "bk" + parts[2]
-        name = code_to_name.get(pt_code, parts[1])
-        cur = float(parts[3]) if parts[3] else 0
-        prev = float(parts[4]) if parts[4] else cur
-        chg = round((cur - prev) / prev * 100, 2) if prev else 0
+    for it in items:
+        code = it.get("f12", "")
+        name = name_map.get(code, it.get("f14", ""))
+        cur = it.get("f2", 0) or 0
+        chg = it.get("f3", 0) or 0
         result.append({
-            "板块代码": pt_code,
+            "板块代码": code,
             "板块名称": name,
-            "涨跌幅": chg,
+            "涨跌幅": round(chg, 2),
             "最新价": round(cur, 2),
             "ETF": _CNCEPT_ETF.get(name, []),
         })
