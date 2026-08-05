@@ -10,7 +10,7 @@ from flask import Flask, jsonify, render_template, request
 from sector_scanner import scan_consecutive_inflow
 from stock_analyzer import analyze_stock
 from trade_advisor import advise
-from data_fetcher import get_market_indices, get_sector_major_stocks, _PT_SECTOR_MAP, _curl_text, get_market_signal, get_concept_sector_data, get_international_indices, get_stock_etfs_for_concept
+from data_fetcher import get_market_indices, get_sector_major_stocks, _PT_SECTOR_MAP, _curl_text, get_market_signal, get_concept_sector_data, get_international_indices, get_stock_etfs_for_concept, _CNCEPT_BK
 
 app = Flask(__name__)
 
@@ -79,6 +79,33 @@ def api_concept_etfs(name: str):
         return jsonify({"code": 0, "data": data})
     except Exception as e:
         return jsonify({"code": -1, "msg": str(e), "data": []})
+
+
+@app.route("/api/concept/<name>/stocks")
+def api_concept_stocks(name: str):
+    """概念板块成分股"""
+    bk_code = None
+    for c, n in _CNCEPT_BK:
+        if n == name:
+            bk_code = c; break
+    if not bk_code:
+        return jsonify({"code": -1, "msg": "未找到", "data": [], "count": 0})
+    try:
+        url = (
+            "https://push2.eastmoney.com/api/qt/clist/get?"
+            f"fs=b:{bk_code}&fid=f3&po=1&pz=200&pn=1&np=1&fltt=2&invt=2"
+            "&fields=f2,f3,f12,f14"
+        )
+        text = _curl_text(url, timeout=10)
+        data = json.loads(text)
+        items = data.get("data", {}).get("diff", [])
+        stocks = [{
+            "代码": it.get("f12",""), "名称": it.get("f14",""),
+            "最新价": it.get("f2",0) or 0, "涨跌幅": it.get("f3",0) or 0, "评分": 0
+        } for it in items]
+        return jsonify({"code": 0, "data": stocks, "count": len(stocks)})
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e), "data": [], "count": 0})
 
 
 @app.route("/api/stock/<code>/pe")

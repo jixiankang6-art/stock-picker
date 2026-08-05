@@ -827,33 +827,32 @@ def get_market_signal() -> dict:
 
 
 def get_concept_sector_data() -> list[dict]:
-    """扫描概念板块行情 — 东方财富板块指数"""
-    # 东财 push2his 批量查询
-    secids = ",".join("90." + c for c, _ in _CNCEPT_BK)
-    url = (
-        "https://push2his.eastmoney.com/api/qt/stock/getlist?"
-        f"secids={secids}&fields=f2,f3,f4,f12,f14"
-    )
-    text = _curl_text(url, timeout=10)
-    try:
-        data = json.loads(text)
-        items = data.get("data", {}).get("diff", [])
-    except Exception:
-        return []
-
-    name_map = {c: n for c, n in _CNCEPT_BK}
+    """扫描概念板块行情 — 用腾讯行情查询各概念的代表个股均价"""
     result = []
-    for it in items:
-        code = it.get("f12", "")
-        name = name_map.get(code, it.get("f14", ""))
-        cur = it.get("f2", 0) or 0
-        chg = it.get("f3", 0) or 0
+    for bk_code, bk_name in _CNCEPT_BK:
+        chg = 0
+        # 尝试东财 push2 查成分股
+        try:
+            url = (
+                "https://push2.eastmoney.com/api/qt/clist/get?"
+                f"fs=b:{bk_code}&fid=f62&po=1&pz=3&pn=1&np=1&fltt=2&invt=2"
+                "&fields=f2,f3,f12,f14"
+            )
+            text = _curl_text(url, timeout=6)
+            if text and text.startswith("{") and "diff" in text:
+                data = json.loads(text)
+                items = data.get("data", {}).get("diff", [])
+                if items:
+                    chgs = [it.get("f3", 0) or 0 for it in items]
+                    chg = round(sum(chgs) / len(chgs), 2)
+        except Exception:
+            pass  # 沙箱/IP限流降级
+
         result.append({
-            "板块代码": code,
-            "板块名称": name,
-            "涨跌幅": round(chg, 2),
-            "最新价": round(cur, 2),
-            "ETF": _CNCEPT_ETF.get(name, []),
+            "板块代码": bk_code,
+            "板块名称": bk_name,
+            "涨跌幅": chg,
+            "ETF": _CNCEPT_ETF.get(bk_name, []),
         })
     result.sort(key=lambda x: x["涨跌幅"], reverse=True)
     return result
